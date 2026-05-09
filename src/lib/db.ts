@@ -130,7 +130,10 @@ function getDb(): DatabaseSync {
 // Alias para uso interno — todas las funciones llaman getDb() en lugar de db directamente
 const db = new Proxy({} as DatabaseSync, {
   get(_target, prop) {
-    return (getDb() as unknown as Record<string | symbol, unknown>)[prop];
+    const instance = getDb();
+    const value = (instance as unknown as Record<string | symbol, unknown>)[prop];
+    if (typeof value === 'function') return (value as Function).bind(instance);
+    return value;
   },
 });
 
