@@ -1,0 +1,26 @@
+# dependencias
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# datos en tiempo real (SQLite)
+data/
+
+# variables de entorno
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
