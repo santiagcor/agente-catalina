@@ -127,24 +127,16 @@ function getDb(): DatabaseSync {
   return _db;
 }
 
-// Alias para uso interno — todas las funciones llaman getDb() en lugar de db directamente
-const db = new Proxy({} as DatabaseSync, {
-  get(_target, prop) {
-    const instance = getDb();
-    const value = (instance as unknown as Record<string | symbol, unknown>)[prop];
-    if (typeof value === 'function') return (value as Function).bind(instance);
-    return value;
-  },
-});
-
 // ── Helpers de conversaciones ──────────────────────────────────────────────
 
 export function getOrCreateConversation(phone: string, name?: string | null): Conversation {
+  const db = getDb();
   db.prepare('INSERT OR IGNORE INTO conversations (phone, name) VALUES (?, ?)').run(phone, name ?? null);
   return db.prepare('SELECT * FROM conversations WHERE phone = ?').get(phone) as unknown as Conversation;
 }
 
 export function getConversationById(id: number): Conversation | null {
+  const db = getDb();
   return (db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as unknown as Conversation) ?? null;
 }
 
@@ -153,15 +145,15 @@ export function updateConversationCatalinaData(id: number, data: CatalinaConvers
   if (entries.length === 0) return;
   const fields = entries.map(([k]) => `${k} = ?`).join(', ');
   const values = entries.map(([, v]) => v);
-  db.prepare(`UPDATE conversations SET ${fields} WHERE id = ?`).run(...values, id);
+  getDb().prepare(`UPDATE conversations SET ${fields} WHERE id = ?`).run(...values, id);
 }
 
 export function setMode(conversationId: number, mode: 'AI' | 'HUMAN'): void {
-  db.prepare('UPDATE conversations SET mode = ? WHERE id = ?').run(mode, conversationId);
+  getDb().prepare('UPDATE conversations SET mode = ? WHERE id = ?').run(mode, conversationId);
 }
 
 export function listConversations(): ConversationWithPreview[] {
-  return db.prepare(`
+  return getDb().prepare(`
     SELECT c.*,
       m.content AS last_message_content,
       m.role    AS last_message_role
@@ -177,6 +169,7 @@ export function listConversations(): ConversationWithPreview[] {
 }
 
 export function deleteConversation(id: number): void {
+  const db = getDb();
   db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM zapier_actions_log WHERE conversation_id = ?').run(id);
@@ -197,6 +190,7 @@ export function insertMessage(
   content: string,
   caMessageId?: string | null
 ): number {
+  const db = getDb();
   db.exec('BEGIN');
   try {
     const result = db.prepare(
@@ -215,11 +209,11 @@ export function insertMessage(
 }
 
 export function updateMessageCaId(messageId: number, caMessageId: string): void {
-  db.prepare('UPDATE messages SET ca_message_id = ? WHERE id = ?').run(caMessageId, messageId);
+  getDb().prepare('UPDATE messages SET ca_message_id = ? WHERE id = ?').run(caMessageId, messageId);
 }
 
 export function getMessages(conversationId: number, limit = 50): Message[] {
-  const rows = db.prepare(
+  const rows = getDb().prepare(
     'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?'
   ).all(conversationId, limit) as unknown as Message[];
   return rows.reverse();
@@ -229,7 +223,7 @@ export function getRecentHistory(
   conversationId: number,
   limit = 20
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
-  const rows = db.prepare(
+  const rows = getDb().prepare(
     `SELECT * FROM messages WHERE conversation_id = ? AND role IN ('user','assistant')
      ORDER BY created_at DESC LIMIT ?`
   ).all(conversationId, limit) as unknown as Message[];
@@ -239,13 +233,13 @@ export function getRecentHistory(
 // ── Dedup de webhooks ──────────────────────────────────────────────────────
 
 export function wasMessageProcessed(caMessageId: string): boolean {
-  return !!db.prepare(
+  return !!getDb().prepare(
     'SELECT ca_message_id FROM processed_webhook_messages WHERE ca_message_id = ?'
   ).get(caMessageId);
 }
 
 export function markMessageProcessed(caMessageId: string): void {
-  db.prepare(
+  getDb().prepare(
     'INSERT OR IGNORE INTO processed_webhook_messages (ca_message_id) VALUES (?)'
   ).run(caMessageId);
 }
@@ -259,16 +253,18 @@ export function logZapierAction(
   payload?: string,
   response?: string
 ): void {
-  db.prepare(
+  getDb().prepare(
     `INSERT INTO zapier_actions_log (conversation_id, action, status, payload, response)
      VALUES (?, ?, ?, ?, ?)`
   ).run(conversationId, action, status, payload ?? null, response ?? null);
 }
 
 export function getZapierLogs(conversationId: number, limit = 10) {
-  return db.prepare(
+  return getDb().prepare(
     'SELECT * FROM zapier_actions_log WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ?'
   ).all(conversationId, limit);
 }
+
+export default getDb;
 
 export default db;
