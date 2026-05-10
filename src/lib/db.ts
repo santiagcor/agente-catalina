@@ -266,5 +266,3 @@ export function getZapierLogs(conversationId: number, limit = 10) {
 }
 
 export default getDb;
-
-export default db;
