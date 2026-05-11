@@ -35,10 +35,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  const { messageId, phone, name, text } = incoming;
+  const { messageId, text, _contactId, _leadId } = incoming;
 
-  if (!phone || !text) {
-    console.log('[kommo-wh] falta phone o text, ignorando');
+  if (!text || !_contactId) {
+    console.log('[kommo-wh] falta text o contactId, ignorando');
     return NextResponse.json({ ok: true });
   }
 
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   markMessageProcessed(dedupKey);
 
   // Responder 200 inmediatamente
-  void processMessage({ phone, name, text }).catch((err) =>
+  void processMessage({ contactId: _contactId, leadId: _leadId, text }).catch((err) =>
     console.error('[kommo-wh] error en procesamiento:', err)
   );
 
@@ -59,13 +59,24 @@ export async function POST(req: NextRequest) {
 }
 
 async function processMessage(params: {
-  phone: string;
-  name: string | null;
+  contactId: number;
+  leadId: string | null;
   text: string;
 }): Promise<void> {
-  const { phone, name, text } = params;
+  const { contactId, leadId, text } = params;
+
+  // Buscar teléfono real del contacto en Kommo
+  const contact = await fetchKommoContact(contactId);
+  if (!contact?.phone) {
+    console.error(`[kommo-wh] no se encontró teléfono para contacto ${contactId}`);
+    return;
+  }
+  const { phone, name } = contact;
 
   const convo = getOrCreateConversation(phone, name);
+  if (leadId && !convo.kommo_lead_id) {
+    updateConversationCatalinaData(convo.id, { kommo_lead_id: parseInt(leadId) });
+  }
   insertMessage(convo.id, 'user', text);
 
   console.log(`[kommo-wh] ← ${phone} (${name ?? 'sin nombre'}): "${text.slice(0, 80)}"`);
@@ -116,44 +127,26 @@ interface IncomingMessage {
   phone: string;
   name: string | null;
   text: string;
+  _contactId: number;
+  _leadId: string | null;
 }
 
 function extractIncomingMessage(body: Record<string, unknown>): IncomingMessage | null {
-  // ── Formato v2 (JSON estructurado) ──────────────────────────────────────
-  // { account_id, time, message: { id, sender: { profile: { phone }, name }, message: { type, text } } }
-  const msgWrapper = body.message as Record<string, unknown> | undefined;
-  if (msgWrapper && typeof msgWrapper === 'object' && !Array.isArray(msgWrapper)) {
-    const sender = msgWrapper.sender as Record<string, unknown> | undefined;
-    const innerMsg = msgWrapper.message as Record<string, unknown> | undefined;
+  // Formato real de Kommo: form-urlencoded aplanado
+  // message[add][0][type] = "incoming" | "outgoing"
+  // message[add][0][contact_id] = ID del contacto en Kommo
+  // message[add][0][text] = texto del mensaje
+  // message[add][0][element_id] = ID del lead
+  const flatType = String(body['message[add][0][type]'] ?? '');
+  if (flatType === 'incoming') {
+    const text = String(body['message[add][0][text]'] ?? '').trim();
+    const contactId = Number(body['message[add][0][contact_id]'] ?? 0);
+    const messageId = String(body['message[add][0][id]'] ?? Date.now());
+    const leadId = body['message[add][0][element_id]'] ? String(body['message[add][0][element_id]']) : null;
 
-    if (innerMsg?.type === 'text' || innerMsg?.text) {
-      const text = String(innerMsg?.text ?? '').trim();
-      const profile = sender?.profile as Record<string, unknown> | undefined;
-      const phone = normalizePhone(
-        String(profile?.phone ?? sender?.id ?? '')
-      );
-      const name = (sender?.name as string) ?? null;
-      const messageId = String(msgWrapper.id ?? msgWrapper.timestamp ?? Date.now());
-
-      if (phone && text) {
-        return { messageId, phone, name, text };
-      }
-    }
-  }
-
-  // ── Formato v1 (plano) ──────────────────────────────────────────────────
-  // { receiver, conversation_id, type, text }
-  if (body.type === 'text' && body.text) {
-    const text = String(body.text).trim();
-    // En v1 el teléfono viene en "receiver" o "conversation_id"
-    const phone = normalizePhone(
-      String(body.receiver ?? body.conversation_id ?? '')
-    );
-    const messageId = String(body.conversation_id ?? Date.now());
-    const name = null;
-
-    if (phone && text) {
-      return { messageId, phone, name, text };
+    if (text && contactId) {
+      // Devolvemos contactId como placeholder — fetchKommoContact lo convierte en phone
+      return { messageId, phone: String(contactId), name: null, text, _contactId: contactId, _leadId: leadId };
     }
   }
 
