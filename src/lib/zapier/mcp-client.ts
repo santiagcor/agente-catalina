@@ -3,14 +3,14 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 // ── Config ─────────────────────────────────────────────────────────────────
 
+// Zapier MCP embed: el "server ID" en el path debe ser base64("{embedId}:{secret}")
 function getMcpUrl(): URL {
   const embedId = process.env.ZAPIER_MCP_EMBED_ID;
-  if (!embedId) throw new Error('ZAPIER_MCP_EMBED_ID no configurado');
-  return new URL(`https://mcp.zapier.com/api/mcp/s/${embedId}/mcp`);
-}
-
-function getSecret(): string {
-  return process.env.ZAPIER_MCP_SECRET ?? '';
+  const secret  = process.env.ZAPIER_MCP_SECRET;
+  if (!embedId || !secret) throw new Error('ZAPIER_MCP_EMBED_ID o ZAPIER_MCP_SECRET no configurados');
+  const serverId = Buffer.from(`${embedId}:${secret}`).toString('base64');
+  console.log(`[mcp] serverId (base64): ${serverId.slice(0, 20)}...`);
+  return new URL(`https://mcp.zapier.com/api/mcp/s/${serverId}/mcp`);
 }
 
 // ── Cliente reutilizable por llamada ───────────────────────────────────────
@@ -20,16 +20,9 @@ export async function callZapierTool(
   args: Record<string, unknown>
 ): Promise<unknown> {
   const url = getMcpUrl();
-  const secret = getSecret();
-  console.log(`[mcp] llamando ${toolName} → ${url.href.slice(0, 60)}... secret=${secret ? secret.slice(0,6)+'...' : 'VACÍO'}`);
+  console.log(`[mcp] llamando ${toolName}`);
 
-  const transport = new StreamableHTTPClientTransport(url, {
-    requestInit: {
-      headers: {
-        'Authorization': `Bearer ${secret}`,
-      },
-    },
-  });
+  const transport = new StreamableHTTPClientTransport(url);
 
   const client = new Client(
     { name: 'agente-catalina', version: '1.0.0' },
