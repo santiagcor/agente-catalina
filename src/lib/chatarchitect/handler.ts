@@ -10,7 +10,7 @@ import {
 import { callCatalina } from '@/lib/openrouter';
 import { sendTextMessage } from './client';
 import { syncToKommo } from '@/lib/kommo/client';
-import { triggerZapierAction, sendVoiceNote } from '@/lib/zapier/client';
+import { triggerZapierAction, sendMediaFromOutput } from '@/lib/zapier/client';
 
 // ── Procesador principal del webhook ───────────────────────────────────────
 
@@ -88,12 +88,10 @@ async function handleIncomingMessage(msg: Record<string, unknown>): Promise<void
   const { message_id } = await sendTextMessage(phone, catalinaOutput.message_to_send);
   console.log(`[wh] → enviado a ${phone} (ca_id: ${message_id})`);
 
-  // 6b. Nota de voz si Catalina lo indica
-  if (catalinaOutput.audio_url) {
-    void sendVoiceNote(phone, catalinaOutput.message_to_send).catch((err) =>
-      console.error('[elevenlabs] error nota de voz:', err)
-    );
-  }
+  // 6b. Media (audio, video, documento) si Catalina lo indica
+  void sendMediaFromOutput(phone, catalinaOutput).catch((err) =>
+    console.error('[mcp] error enviando media:', err)
+  );
 
   // 7. Sync Kommo (async)
   void syncToKommo(convo.id, phone, pushName, catalinaOutput).catch((err) =>

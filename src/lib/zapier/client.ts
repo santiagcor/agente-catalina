@@ -195,35 +195,89 @@ function formatPrecotizacionMessage(data: PrecotizacionData, payload: SheetsPayl
   return msg.trim();
 }
 
-// ── Nota de voz: ElevenLabs → ChatArchitect ───────────────────────────────
+// ── Envío de media via MCP (audio, video, documento, imagen) ─────────────
+// Punto único de despacho según los campos que devuelve Catalina.
 
-export async function sendVoiceNote(phone: string, text: string): Promise<void> {
+export async function sendMediaFromOutput(
+  phone: string,
+  catalinaOutput: CatalinaOutput
+): Promise<void> {
   if (!zapierMcpConfigured()) return;
 
-  const cleanText = text.replace(/[^\w\s.,;:¿?¡!áéíóúñÁÉÍÓÚÑ-]/g, ' ').replace(/\s+/g, ' ').trim();
+  const phoneNum = parseInt(phone.replace(/\D/g, ''));
+  const tasks: Promise<void>[] = [];
 
-  console.log(`[elevenlabs] generando audio para ${phone}...`);
-  const audioResult = await callZapierTool('elevenlabs_convert_text_to_speech', {
-    instructions: `Convierte este mensaje de Catalina (asistente de Energreen Solutions) a voz para enviarlo por WhatsApp`,
-    output_hint: 'URL del archivo de audio generado',
-    text: cleanText,
-    model_id: 'eleven_multilingual_v2',
-    output_format: 'mp3_44100_128',
-  }) as Record<string, unknown>;
-
-  const audioUrl = (audioResult?.url ?? audioResult?.audio_url ?? audioResult?.output ?? '') as string;
-  if (!audioUrl) {
-    console.error('[elevenlabs] no se obtuvo URL de audio:', JSON.stringify(audioResult).slice(0, 200));
-    return;
+  // Audio: "generate" = sintetizar con ElevenLabs; cualquier otra URL = enviar directo
+  if (catalinaOutput.audio_url) {
+    tasks.push(sendAudio(phoneNum, catalinaOutput.message_to_send, catalinaOutput.audio_url));
   }
 
-  const phoneNum = parseInt(phone.replace(/\D/g, ''));
-  await callZapierTool('chatarchitect_com_send_an_audio', {
-    instructions: 'Envía esta nota de voz por WhatsApp al número indicado',
-    output_hint: 'confirmación de envío del audio',
-    destination: phoneNum,
-    url: audioUrl,
-  });
+  // Video
+  if (catalinaOutput.video_url) {
+    tasks.push(sendVideo(phoneNum, catalinaOutput.video_url));
+  }
 
-  console.log(`[elevenlabs] nota de voz enviada a ${phone}`);
+  // Documento / PDF
+  if (catalinaOutput.pdf_url) {
+    tasks.push(sendDocument(phoneNum, catalinaOutput.pdf_url, catalinaOutput.pdf_filename));
+  }
+
+  await Promise.allSettled(tasks);
+}
+
+async function sendAudio(phoneNum: number, text: string, audioUrl: string): Promise<void> {
+  let url = audioUrl;
+
+  if (audioUrl === 'generate') {
+    const cleanText = text.replace(/[^\w\s.,;:¿?¡!áéíóúñÁÉÍÓÚÑ-]/g, ' ').replace(/\s+/g, ' ').trim();
+    console.log('[elevenlabs] generando audio...');
+    const result = await callZapierTool('elevenlabs_convert_text_to_speech', {
+      instructions: 'Convierte este mensaje de Catalina a voz en español colombiano para enviarlo por WhatsApp',
+      output_hint: 'URL pública del archivo de audio MP3 generado',
+      text: cleanText,
+      model_id: 'eleven_multilingual_v2',
+      output_format: 'mp3_44100_128',
+    }) as Record<string, unknown>;
+
+    url = (result?.url ?? result?.audio_url ?? result?.output ?? '') as string;
+    if (!url) {
+      console.error('[elevenlabs] sin URL de audio:', JSON.stringify(result).slice(0, 200));
+      return;
+    }
+  }
+
+  await callZapierTool('chatarchitect_com_send_an_audio', {
+    instructions: 'Envía esta nota de voz por WhatsApp',
+    output_hint: 'confirmación de envío',
+    destination: phoneNum,
+    url,
+  });
+  console.log(`[mcp] audio enviado a ${phoneNum}`);
+}
+
+async function sendVideo(phoneNum: number, url: string): Promise<void> {
+  await callZapierTool('chatarchitect_com_send_a_video', {
+    instructions: 'Envía este video por WhatsApp',
+    output_hint: 'confirmación de envío',
+    destination: phoneNum,
+    url,
+  });
+  console.log(`[mcp] video enviado a ${phoneNum}`);
+}
+
+async function sendDocument(phoneNum: number, url: string, filename: string | null): Promise<void> {
+  await callZapierTool('chatarchitect_com_send_a_document', {
+    instructions: 'Envía este documento por WhatsApp',
+    output_hint: 'confirmación de envío',
+    destination: phoneNum,
+    url,
+    filename: filename ?? 'documento.pdf',
+  });
+  console.log(`[mcp] documento enviado a ${phoneNum}`);
+}
+
+// Mantener alias para compatibilidad con código existente
+export async function sendVoiceNote(phone: string, text: string): Promise<void> {
+  const phoneNum = parseInt(phone.replace(/\D/g, ''));
+  await sendAudio(phoneNum, text, 'generate');
 }
