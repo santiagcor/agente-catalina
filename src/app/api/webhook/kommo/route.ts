@@ -12,6 +12,7 @@ import { callCatalina } from '@/lib/openrouter';
 import { sendTextMessage } from '@/lib/chatarchitect/client';
 import { syncToKommo } from '@/lib/kommo/client';
 import { triggerZapierAction, sendMediaFromOutput } from '@/lib/zapier/client';
+import { callZapierTool, zapierMcpConfigured } from '@/lib/zapier/mcp-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +24,6 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } else {
     const text = await req.text();
-    // Kommo puede enviar form-urlencoded
     body = Object.fromEntries(new URLSearchParams(text));
   }
 
@@ -35,12 +35,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  const { messageId, text, _contactId, _leadId, _talkId } = incoming;
+  const { messageId, text, attachmentUrl, attachmentType, _contactId, _leadId, _talkId } = incoming;
 
-  if (!text || !_contactId) {
-    console.log('[kommo-wh] falta text o contactId, ignorando');
+  if (!text && !attachmentUrl) {
+    console.log('[kommo-wh] sin texto ni adjunto, ignorando');
     return NextResponse.json({ ok: true });
   }
+  if (!_contactId) return NextResponse.json({ ok: true });
 
   // Dedup
   const dedupKey = `kommo-msg-${messageId}`;
@@ -50,10 +51,14 @@ export async function POST(req: NextRequest) {
   }
   markMessageProcessed(dedupKey);
 
-  // Responder 200 inmediatamente
-  void processMessage({ contactId: _contactId, leadId: _leadId, talkId: _talkId, text }).catch((err) =>
-    console.error('[kommo-wh] error en procesamiento:', err)
-  );
+  void processMessage({
+    contactId: _contactId,
+    leadId: _leadId,
+    talkId: _talkId,
+    text,
+    attachmentUrl,
+    attachmentType,
+  }).catch((err) => console.error('[kommo-wh] error en procesamiento:', err));
 
   return NextResponse.json({ ok: true });
 }
@@ -63,10 +68,11 @@ async function processMessage(params: {
   leadId: string | null;
   talkId: string | null;
   text: string;
+  attachmentUrl: string | null;
+  attachmentType: string | null;
 }): Promise<void> {
-  const { contactId, leadId, talkId, text } = params;
+  const { contactId, leadId, text, attachmentUrl, attachmentType } = params;
 
-  // Buscar teléfono real del contacto en Kommo
   const contact = await fetchKommoContact(contactId);
   if (!contact?.phone) {
     console.error(`[kommo-wh] no se encontró teléfono para contacto ${contactId}`);
@@ -79,18 +85,26 @@ async function processMessage(params: {
     updateConversationCatalinaData(convo.id, { kommo_lead_id: parseInt(leadId) });
   }
 
-  // Nota de voz entrante — no podemos transcribir, pedimos que escriban
-  if (text === '__AUDIO__') {
-    const reply = 'Hola, recibí tu nota de voz. Por el momento solo puedo responder mensajes de texto. ¿Me cuentas en qué te puedo ayudar?';
-    insertMessage(convo.id, 'assistant', reply);
-    await sendTextMessage(phone, reply);
-    console.log(`[kommo-wh] audio entrante de ${phone}, respondido con texto`);
-    return;
+  // Extraer contenido de adjuntos via MCP
+  let resolvedText = text;
+  if (attachmentUrl && zapierMcpConfigured()) {
+    const extracted = await extractAttachmentContent(attachmentUrl, attachmentType ?? '');
+    if (extracted) {
+      resolvedText = extracted;
+      console.log(`[kommo-wh] adjunto procesado (${attachmentType}): "${extracted.slice(0, 100)}"`);
+    } else if (!text) {
+      // No se pudo extraer y no hay texto
+      const reply = 'Recibí tu archivo pero no pude procesarlo. ¿Puedes describirme lo que necesitas en texto?';
+      insertMessage(convo.id, 'assistant', reply);
+      await sendTextMessage(phone, reply);
+      return;
+    }
   }
 
-  insertMessage(convo.id, 'user', text);
+  if (!resolvedText) return;
 
-  console.log(`[kommo-wh] ← ${phone} (${name ?? 'sin nombre'}): "${text.slice(0, 80)}"`);
+  insertMessage(convo.id, 'user', resolvedText);
+  console.log(`[kommo-wh] ← ${phone} (${name ?? 'sin nombre'}): "${resolvedText.slice(0, 80)}"`);
 
   const fresh = getConversationById(convo.id);
   if (!fresh || fresh.mode !== 'AI') {
@@ -120,7 +134,6 @@ async function processMessage(params: {
   const { message_id } = await sendTextMessage(phone, catalinaOutput.message_to_send);
   console.log(`[kommo-wh] → enviado a ${phone} (ca_id: ${message_id})`);
 
-  // Media (audio, video, documento) si Catalina lo indica
   void sendMediaFromOutput(phone, catalinaOutput).catch((err) =>
     console.error('[mcp] error enviando media:', err)
   );
@@ -136,16 +149,72 @@ async function processMessage(params: {
   }
 }
 
-// ── Parser — soporta formato v1 y v2 de Kommo chat webhooks ──────────────────
+// ── Extracción de contenido de adjuntos via Zapier MCP ────────────────────
+
+async function extractAttachmentContent(url: string, type: string): Promise<string | null> {
+  try {
+    if (type === 'voice' || type === 'audio') {
+      console.log('[kommo-wh] transcribiendo audio con Gemini...');
+      const result = await callZapierTool('google_ai_studio_gemini_understand_audio', {
+        instructions: 'Transcribe este audio enviado por un cliente a un asistente de ventas de energía solar en Colombia',
+        output_hint: 'transcripción completa del audio en español',
+        fileUrl: url,
+        prompt: 'Transcribe exactamente lo que dice el cliente en este audio. Solo el texto, sin comentarios adicionales.',
+        model: 'gemini-2.0-flash',
+      }) as Record<string, unknown>;
+      return extractText(result);
+    }
+
+    if (type === 'file' || type === 'document' || url.toLowerCase().includes('.pdf')) {
+      console.log('[kommo-wh] leyendo documento con Gemini...');
+      const result = await callZapierTool('google_ai_studio_gemini_understand_document', {
+        instructions: 'Extrae el contenido relevante de este documento enviado por un cliente',
+        output_hint: 'texto completo o resumen del contenido del documento',
+        fileUrl: url,
+        prompt: 'Resume el contenido principal de este documento en español. Incluye datos clave como números, fechas o montos si los hay.',
+        model: 'gemini-2.0-flash',
+      }) as Record<string, unknown>;
+      return extractText(result);
+    }
+
+    // Imagen u otro tipo — usar AI by Zapier genérico
+    console.log('[kommo-wh] extrayendo contenido de archivo con AI by Zapier...');
+    const result = await callZapierTool('ai_by_zapier_extract_content_from_url', {
+      instructions: 'Extrae o describe el contenido de este archivo enviado por un cliente de energía solar',
+      output_hint: 'descripción o texto extraído del archivo',
+      url,
+    }) as Record<string, unknown>;
+    return extractText(result);
+  } catch (err) {
+    console.error(`[kommo-wh] error extrayendo adjunto (${type}):`, err);
+    return null;
+  }
+}
+
+function extractText(result: Record<string, unknown>): string | null {
+  const text = (
+    result?.output ??
+    result?.text ??
+    result?.content ??
+    result?.transcript ??
+    result?.response ??
+    result?.result
+  ) as string | undefined;
+  return text?.trim() || null;
+}
+
+// ── Parser ────────────────────────────────────────────────────────────────
 
 interface IncomingMessage {
   messageId: string;
-  phone: string;
-  name: string | null;
   text: string;
+  attachmentUrl: string | null;
+  attachmentType: string | null;
   _contactId: number;
   _leadId: string | null;
   _talkId: string | null;
+  phone: string;
+  name: string | null;
 }
 
 function extractIncomingMessage(body: Record<string, unknown>): IncomingMessage | null {
@@ -159,23 +228,23 @@ function extractIncomingMessage(body: Record<string, unknown>): IncomingMessage 
   const leadId = body['message[add][0][element_id]'] ? String(body['message[add][0][element_id]']) : null;
   const talkId = body['message[add][0][talk_id]'] ? String(body['message[add][0][talk_id]']) : null;
 
-  let text = String(body['message[add][0][text]'] ?? '').trim();
+  const text = String(body['message[add][0][text]'] ?? '').trim();
+  const attachmentType = String(body['message[add][0][attachment][type]'] ?? '') || null;
+  const attachmentUrl = String(body['message[add][0][attachment][link]'] ?? '') || null;
 
-  // Si no hay texto pero hay attachment de voz, usar texto placeholder
-  if (!text) {
-    const attachType = String(body['message[add][0][attachment][type]'] ?? '');
-    if (attachType === 'voice' || attachType === 'audio') {
-      text = '__AUDIO__';
-    }
-  }
+  if (!text && !attachmentUrl) return null;
 
-  if (!text) return null;
-
-  return { messageId, phone: String(contactId), name: null, text, _contactId: contactId, _leadId: leadId, _talkId: talkId };
-}
-
-function normalizePhone(raw: string): string {
-  return raw.replace(/[^\d+]/g, '');
+  return {
+    messageId,
+    text,
+    attachmentUrl,
+    attachmentType,
+    _contactId: contactId,
+    _leadId: leadId,
+    _talkId: talkId,
+    phone: String(contactId),
+    name: null,
+  };
 }
 
 async function fetchKommoContact(contactId: number): Promise<{ phone: string | null; name: string | null } | null> {
