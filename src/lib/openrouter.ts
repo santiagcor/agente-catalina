@@ -29,7 +29,7 @@ const openrouter = new OpenAI({
   apiKey: process.env.OPENROUTER_API_KEY ?? '',
   defaultHeaders: {
     'HTTP-Referer': 'https://energreensolutions.co',
-    'X-Title': 'Agente Catalina — ENERGREEN',
+    'X-Title': 'Agente Catalina - ENERGREEN',
   },
 });
 
