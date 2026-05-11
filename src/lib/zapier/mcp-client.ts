@@ -3,35 +3,25 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 
 // ── Config ─────────────────────────────────────────────────────────────────
 
+// Zapier MCP espera el secreto embebido en la URL, no como Bearer header.
+// Formato: https://mcp.zapier.com/api/mcp/s/{embedId}:{secret}/mcp
 function getMcpUrl(): URL {
   const embedId = process.env.ZAPIER_MCP_EMBED_ID;
+  const secret  = process.env.ZAPIER_MCP_SECRET;
   if (!embedId) throw new Error('ZAPIER_MCP_EMBED_ID no configurado');
-  return new URL(`https://mcp.zapier.com/api/mcp/s/${embedId}/mcp`);
-}
-
-function getSecret(): string {
-  const secret = process.env.ZAPIER_MCP_SECRET;
-  if (!secret) throw new Error('ZAPIER_MCP_SECRET no configurado');
-  return secret;
+  const serverId = secret ? `${embedId}:${secret}` : embedId;
+  return new URL(`https://mcp.zapier.com/api/mcp/s/${serverId}/mcp`);
 }
 
 // ── Cliente reutilizable por llamada ───────────────────────────────────────
-// Cada invocación crea su propia sesión para evitar problemas de concurrencia.
 
 export async function callZapierTool(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<unknown> {
   const url = getMcpUrl();
-  const secret = getSecret();
 
-  const transport = new StreamableHTTPClientTransport(url, {
-    requestInit: {
-      headers: {
-        'Authorization': `Bearer ${secret}`,
-      },
-    },
-  });
+  const transport = new StreamableHTTPClientTransport(url);
 
   const client = new Client(
     { name: 'agente-catalina', version: '1.0.0' },
@@ -48,5 +38,5 @@ export async function callZapierTool(
 }
 
 export function zapierMcpConfigured(): boolean {
-  return !!(process.env.ZAPIER_MCP_EMBED_ID && process.env.ZAPIER_MCP_SECRET);
+  return !!process.env.ZAPIER_MCP_EMBED_ID;
 }
