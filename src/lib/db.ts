@@ -140,6 +140,20 @@ export function getConversationById(id: number): Conversation | null {
   return (db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as unknown as Conversation) ?? null;
 }
 
+export function getConversationByLeadId(leadId: number): ConversationWithPreview | null {
+  const db = getDb();
+  return (db.prepare(`
+    SELECT c.*,
+      m.content AS last_message_content,
+      m.role    AS last_message_role
+    FROM conversations c
+    LEFT JOIN messages m ON m.id = (
+      SELECT id FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1
+    )
+    WHERE c.kommo_lead_id = ?
+  `).get(leadId) as unknown as ConversationWithPreview) ?? null;
+}
+
 export function updateConversationCatalinaData(id: number, data: CatalinaConversationData): void {
   const entries = Object.entries(data).filter(([, v]) => v !== undefined);
   if (entries.length === 0) return;
