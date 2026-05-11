@@ -152,36 +152,12 @@ async function processMessage(params: {
 // ── Extracción de contenido de adjuntos via Zapier MCP ────────────────────
 
 async function extractAttachmentContent(url: string, type: string): Promise<string | null> {
+  const label = type === 'voice' || type === 'audio' ? 'audio' : type === 'file' || type === 'document' ? 'documento' : 'archivo';
+  console.log(`[kommo-wh] extrayendo ${label} con AI by Zapier...`);
   try {
-    if (type === 'voice' || type === 'audio') {
-      console.log('[kommo-wh] transcribiendo audio con Gemini...');
-      const result = await callZapierTool('google_ai_studio_gemini_understand_audio', {
-        instructions: 'Transcribe este audio enviado por un cliente a un asistente de ventas de energía solar en Colombia',
-        output_hint: 'transcripción completa del audio en español',
-        fileUrl: url,
-        prompt: 'Transcribe exactamente lo que dice el cliente en este audio. Solo el texto, sin comentarios adicionales.',
-        model: 'gemini-2.0-flash',
-      }) as Record<string, unknown>;
-      return extractText(result);
-    }
-
-    if (type === 'file' || type === 'document' || url.toLowerCase().includes('.pdf')) {
-      console.log('[kommo-wh] leyendo documento con Gemini...');
-      const result = await callZapierTool('google_ai_studio_gemini_understand_document', {
-        instructions: 'Extrae el contenido relevante de este documento enviado por un cliente',
-        output_hint: 'texto completo o resumen del contenido del documento',
-        fileUrl: url,
-        prompt: 'Resume el contenido principal de este documento en español. Incluye datos clave como números, fechas o montos si los hay.',
-        model: 'gemini-2.0-flash',
-      }) as Record<string, unknown>;
-      return extractText(result);
-    }
-
-    // Imagen u otro tipo — usar AI by Zapier genérico
-    console.log('[kommo-wh] extrayendo contenido de archivo con AI by Zapier...');
     const result = await callZapierTool('ai_by_zapier_extract_content_from_url', {
-      instructions: 'Extrae o describe el contenido de este archivo enviado por un cliente de energía solar',
-      output_hint: 'descripción o texto extraído del archivo',
+      instructions: `Extrae o transcribe el contenido de este ${label} enviado por un cliente a un asistente de ventas de energía solar en Colombia. Si es audio, transcribe exactamente lo que dice.`,
+      output_hint: 'transcripción o texto extraído en español',
       url,
     }) as Record<string, unknown>;
     return extractText(result);
