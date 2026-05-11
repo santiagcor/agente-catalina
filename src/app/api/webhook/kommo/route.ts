@@ -78,6 +78,16 @@ async function processMessage(params: {
   if (leadId && !convo.kommo_lead_id) {
     updateConversationCatalinaData(convo.id, { kommo_lead_id: parseInt(leadId) });
   }
+
+  // Nota de voz entrante — no podemos transcribir, pedimos que escriban
+  if (text === '__AUDIO__') {
+    const reply = 'Hola, recibí tu nota de voz. Por el momento solo puedo responder mensajes de texto. ¿Me cuentas en qué te puedo ayudar?';
+    insertMessage(convo.id, 'assistant', reply);
+    await sendTextMessage(phone, reply);
+    console.log(`[kommo-wh] audio entrante de ${phone}, respondido con texto`);
+    return;
+  }
+
   insertMessage(convo.id, 'user', text);
 
   console.log(`[kommo-wh] ← ${phone} (${name ?? 'sin nombre'}): "${text.slice(0, 80)}"`);
@@ -142,19 +152,28 @@ interface IncomingMessage {
 
 function extractIncomingMessage(body: Record<string, unknown>): IncomingMessage | null {
   const flatType = String(body['message[add][0][type]'] ?? '');
-  if (flatType === 'incoming') {
-    const text = String(body['message[add][0][text]'] ?? '').trim();
-    const contactId = Number(body['message[add][0][contact_id]'] ?? 0);
-    const messageId = String(body['message[add][0][id]'] ?? Date.now());
-    const leadId = body['message[add][0][element_id]'] ? String(body['message[add][0][element_id]']) : null;
-    const talkId = body['message[add][0][talk_id]'] ? String(body['message[add][0][talk_id]']) : null;
+  if (flatType !== 'incoming') return null;
 
-    if (text && contactId) {
-      return { messageId, phone: String(contactId), name: null, text, _contactId: contactId, _leadId: leadId, _talkId: talkId };
+  const contactId = Number(body['message[add][0][contact_id]'] ?? 0);
+  if (!contactId) return null;
+
+  const messageId = String(body['message[add][0][id]'] ?? Date.now());
+  const leadId = body['message[add][0][element_id]'] ? String(body['message[add][0][element_id]']) : null;
+  const talkId = body['message[add][0][talk_id]'] ? String(body['message[add][0][talk_id]']) : null;
+
+  let text = String(body['message[add][0][text]'] ?? '').trim();
+
+  // Si no hay texto pero hay attachment de voz, usar texto placeholder
+  if (!text) {
+    const attachType = String(body['message[add][0][attachment][type]'] ?? '');
+    if (attachType === 'voice' || attachType === 'audio') {
+      text = '__AUDIO__';
     }
   }
 
-  return null;
+  if (!text) return null;
+
+  return { messageId, phone: String(contactId), name: null, text, _contactId: contactId, _leadId: leadId, _talkId: talkId };
 }
 
 function normalizePhone(raw: string): string {
