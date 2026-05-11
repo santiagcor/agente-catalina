@@ -111,7 +111,8 @@ export async function syncToKommo(
   conversationId: number,
   phone: string,
   name: string | null,
-  catalinaOutput: CatalinaOutput
+  catalinaOutput: CatalinaOutput,
+  talkId?: string
 ): Promise<void> {
   const pipelineId = parseInt(process.env.KOMMO_PIPELINE_ID ?? '0');
   const convo = getConversationById(conversationId);
@@ -145,5 +146,28 @@ export async function syncToKommo(
     updateConversationCatalinaData(conversationId, { kommo_lead_id: leadId });
   } else if (catalinaOutput.new_status_id !== convo.kommo_status_id) {
     await updateLeadStatus(leadId, catalinaOutput.new_status_id, pipelineId);
+  }
+
+  // Añadir respuesta de Catalina como nota en el lead para que sea visible en Kommo
+  if (leadId && catalinaOutput.message_to_send) {
+    await addNoteToLead(leadId, `🤖 Catalina: ${catalinaOutput.message_to_send}`);
+  }
+
+  // Intentar enviar como mensaje saliente en el chat de Kommo (via talk_id)
+  if (talkId && catalinaOutput.message_to_send) {
+    await sendKommoChatMessage(talkId, catalinaOutput.message_to_send).catch((err) =>
+      console.warn('[kommo] no se pudo enviar mensaje al chat, solo se añadió nota:', err)
+    );
+  }
+}
+
+export async function sendKommoChatMessage(talkId: string, text: string): Promise<void> {
+  const res = await fetch(`${kommoBase()}/talks/${talkId}/reply`, {
+    method: 'POST',
+    headers: kommoHeaders(),
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    throw new Error(`Kommo chat reply ${res.status}: ${await res.text()}`);
   }
 }

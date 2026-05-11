@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
-  const { messageId, text, _contactId, _leadId } = incoming;
+  const { messageId, text, _contactId, _leadId, _talkId } = incoming;
 
   if (!text || !_contactId) {
     console.log('[kommo-wh] falta text o contactId, ignorando');
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   markMessageProcessed(dedupKey);
 
   // Responder 200 inmediatamente
-  void processMessage({ contactId: _contactId, leadId: _leadId, text }).catch((err) =>
+  void processMessage({ contactId: _contactId, leadId: _leadId, talkId: _talkId, text }).catch((err) =>
     console.error('[kommo-wh] error en procesamiento:', err)
   );
 
@@ -61,9 +61,10 @@ export async function POST(req: NextRequest) {
 async function processMessage(params: {
   contactId: number;
   leadId: string | null;
+  talkId: string | null;
   text: string;
 }): Promise<void> {
-  const { contactId, leadId, text } = params;
+  const { contactId, leadId, talkId, text } = params;
 
   // Buscar teléfono real del contacto en Kommo
   const contact = await fetchKommoContact(contactId);
@@ -109,7 +110,7 @@ async function processMessage(params: {
   const { message_id } = await sendTextMessage(phone, catalinaOutput.message_to_send);
   console.log(`[kommo-wh] → enviado a ${phone} (ca_id: ${message_id})`);
 
-  void syncToKommo(convo.id, phone, name, catalinaOutput).catch((err) =>
+  void syncToKommo(convo.id, phone, name, catalinaOutput, talkId ?? undefined).catch((err) =>
     console.error('[kommo] error sync:', err)
   );
 
@@ -129,24 +130,20 @@ interface IncomingMessage {
   text: string;
   _contactId: number;
   _leadId: string | null;
+  _talkId: string | null;
 }
 
 function extractIncomingMessage(body: Record<string, unknown>): IncomingMessage | null {
-  // Formato real de Kommo: form-urlencoded aplanado
-  // message[add][0][type] = "incoming" | "outgoing"
-  // message[add][0][contact_id] = ID del contacto en Kommo
-  // message[add][0][text] = texto del mensaje
-  // message[add][0][element_id] = ID del lead
   const flatType = String(body['message[add][0][type]'] ?? '');
   if (flatType === 'incoming') {
     const text = String(body['message[add][0][text]'] ?? '').trim();
     const contactId = Number(body['message[add][0][contact_id]'] ?? 0);
     const messageId = String(body['message[add][0][id]'] ?? Date.now());
     const leadId = body['message[add][0][element_id]'] ? String(body['message[add][0][element_id]']) : null;
+    const talkId = body['message[add][0][talk_id]'] ? String(body['message[add][0][talk_id]']) : null;
 
     if (text && contactId) {
-      // Devolvemos contactId como placeholder — fetchKommoContact lo convierte en phone
-      return { messageId, phone: String(contactId), name: null, text, _contactId: contactId, _leadId: leadId };
+      return { messageId, phone: String(contactId), name: null, text, _contactId: contactId, _leadId: leadId, _talkId: talkId };
     }
   }
 
