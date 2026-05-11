@@ -154,6 +154,30 @@ function extractIncomingMessage(body: Record<string, unknown>): IncomingMessage 
 }
 
 function normalizePhone(raw: string): string {
-  // Eliminar todo excepto dígitos y el + inicial
   return raw.replace(/[^\d+]/g, '');
+}
+
+async function fetchKommoContact(contactId: number): Promise<{ phone: string | null; name: string | null } | null> {
+  const base = `https://${process.env.KOMMO_SUBDOMAIN}.kommo.com/api/v4`;
+  const res = await fetch(`${base}/contacts/${contactId}`, {
+    headers: { 'Authorization': `Bearer ${process.env.KOMMO_LONG_LIVED_TOKEN ?? ''}` },
+  });
+  if (!res.ok) {
+    console.error(`[kommo] error al buscar contacto ${contactId}: ${res.status}`);
+    return null;
+  }
+  const json = await res.json() as Record<string, unknown>;
+  const name = (json.name as string) ?? null;
+  const customFields = json.custom_fields_values as Array<Record<string, unknown>> | undefined;
+  let phone: string | null = null;
+  if (Array.isArray(customFields)) {
+    for (const field of customFields) {
+      if (field.field_code === 'PHONE') {
+        const values = field.values as Array<{ value: string }> | undefined;
+        phone = values?.[0]?.value ?? null;
+        break;
+      }
+    }
+  }
+  return { phone, name };
 }
