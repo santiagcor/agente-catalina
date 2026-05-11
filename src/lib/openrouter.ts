@@ -40,11 +40,18 @@ export async function callCatalina(
   convo: Conversation
 ): Promise<CatalinaOutput> {
   const { SYSTEM_PROMPT } = await import('./system-prompt');
+  const { fetchRagContext, checkCityCoverage } = await import('./rag');
+
+  const [ragContext, cityHasCoverage] = await Promise.all([
+    fetchRagContext().catch(() => ''),
+    convo.catalina_ciudad ? checkCityCoverage(convo.catalina_ciudad).catch(() => true) : Promise.resolve(null),
+  ]);
 
   const contextBlock = [
     'DATOS ACTUALES DEL LEAD EN DB:',
     `nombre: ${convo.catalina_nombre || '(vacío)'}`,
     `ciudad: ${convo.catalina_ciudad || '(vacío)'}`,
+    `cobertura_ciudad: ${cityHasCoverage === null ? 'pendiente (sin ciudad aún)' : cityHasCoverage ? 'SÍ tiene cobertura' : 'NO tiene cobertura — no generar precotización'}`,
     `tipo_persona: ${convo.catalina_tipo_persona || '(vacío)'}`,
     `consumo: ${convo.catalina_consumo || '(vacío)'}`,
     `consentimiento: ${convo.catalina_consentimiento || 'pendiente'}`,
@@ -55,10 +62,10 @@ export async function callCatalina(
   const completion = await openrouter.chat.completions.create({
     model: process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini',
     messages: [
-      { role: 'system', content: `${SYSTEM_PROMPT}\n\n${contextBlock}` },
+      { role: 'system', content: `${SYSTEM_PROMPT}\n\n${contextBlock}${ragContext ? `\n\n---\n\n## DOCUMENTOS DE CONOCIMIENTO ENERGREEN\n\n${ragContext}` : ''}` },
       ...history,
     ],
-    max_tokens: 1000,
+    max_tokens: 1200,
     temperature: 0.3,
   });
 

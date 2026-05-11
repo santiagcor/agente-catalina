@@ -110,7 +110,7 @@ async function processMessage(params: {
   const { message_id } = await sendTextMessage(phone, catalinaOutput.message_to_send);
   console.log(`[kommo-wh] → enviado a ${phone} (ca_id: ${message_id})`);
 
-  void syncToKommo(convo.id, phone, name, catalinaOutput, talkId ?? undefined).catch((err) =>
+  void syncToKommo(convo.id, phone, name, catalinaOutput).catch((err) =>
     console.error('[kommo] error sync:', err)
   );
 
