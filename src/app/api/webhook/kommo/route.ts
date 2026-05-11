@@ -11,7 +11,7 @@ import {
 import { callCatalina } from '@/lib/openrouter';
 import { sendTextMessage } from '@/lib/chatarchitect/client';
 import { syncToKommo } from '@/lib/kommo/client';
-import { triggerZapierAction } from '@/lib/zapier/client';
+import { triggerZapierAction, sendVoiceNote } from '@/lib/zapier/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,6 +109,13 @@ async function processMessage(params: {
   insertMessage(convo.id, 'assistant', catalinaOutput.message_to_send);
   const { message_id } = await sendTextMessage(phone, catalinaOutput.message_to_send);
   console.log(`[kommo-wh] → enviado a ${phone} (ca_id: ${message_id})`);
+
+  // Nota de voz si Catalina lo indica
+  if (catalinaOutput.audio_url) {
+    void sendVoiceNote(phone, catalinaOutput.message_to_send).catch((err) =>
+      console.error('[elevenlabs] error nota de voz:', err)
+    );
+  }
 
   void syncToKommo(convo.id, phone, name, catalinaOutput).catch((err) =>
     console.error('[kommo] error sync:', err)

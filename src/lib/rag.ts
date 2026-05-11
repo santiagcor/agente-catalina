@@ -9,8 +9,6 @@ const DOCS = {
   interna:   '1BiFExKA2wAogA3ZVUnRxDi_1tCjzEs6B',
 } as const;
 
-const MUNICIPIOS_SHEET_ID = '1-di-m3YHksZv0384BSAIg8R7WmI';
-
 // ── In-memory cache (30 min TTL) ──────────────────────────────────────────
 
 interface CacheEntry { content: string; ts: number }
@@ -44,39 +42,27 @@ async function fetchDoc(key: keyof typeof DOCS): Promise<string> {
   }
 }
 
-// ── Check municipios coverage via Google Sheets ───────────────────────────
-
-let municipiosList: string[] | null = null;
-let municipiosTs = 0;
+// ── Check municipios coverage via Zapier MCP Sheets lookup ───────────────
+// Uses "BASE DATOS MUNICIPIOS ENERGREEN" spreadsheet, lookup by "Ciudad"
 
 export async function checkCityCoverage(ciudad: string): Promise<boolean> {
-  if (!zapierMcpConfigured()) return true; // sin MCP, no bloquear
+  if (!zapierMcpConfigured()) return true;
 
-  const now = Date.now();
-  if (!municipiosList || now - municipiosTs > TTL_MS) {
-    try {
-      const result = await callZapierTool('google_sheets_get_many_spreadsheet_rows_advanced', {
-        spreadsheet_id: MUNICIPIOS_SHEET_ID,
-        worksheet: 'Municipios',
-      }) as Record<string, unknown>;
+  try {
+    const result = await callZapierTool('google_sheets_lookup_spreadsheet_row', {
+      instructions: `Busca si la ciudad "${ciudad}" tiene cobertura en Energreen Solutions`,
+      output_hint: 'nombre de la ciudad encontrada en la base de datos de municipios',
+      lookup_value: ciudad,
+    }) as Record<string, unknown>;
 
-      const rows = (result?.rows ?? result?.output ?? []) as Array<Record<string, unknown>>;
-      municipiosList = rows
-        .map(r => String(r.municipio ?? r.ciudad ?? r.name ?? Object.values(r)[0] ?? '').toLowerCase().trim())
-        .filter(Boolean);
-      municipiosTs = now;
-      console.log(`[rag] municipios cargados: ${municipiosList.length}`);
-    } catch (err) {
-      console.error('[rag] error cargando municipios:', err);
-      return true; // si falla la consulta, no bloquear
-    }
+    // If lookup found a row, the city has coverage
+    const found = result && typeof result === 'object' && Object.keys(result).length > 0;
+    console.log(`[rag] cobertura ${ciudad}: ${found ? 'SÍ' : 'NO'}`);
+    return !!found;
+  } catch (err) {
+    console.error('[rag] error lookup municipio:', err);
+    return true; // no bloquear si falla la consulta
   }
-
-  const normalized = ciudad.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
-  return municipiosList!.some(m => {
-    const mn = m.normalize('NFD').replace(/[̀-ͯ]/g, '');
-    return mn === normalized || mn.includes(normalized) || normalized.includes(mn);
-  });
 }
 
 // ── Fetch all RAG docs in parallel and return combined context ─────────────
