@@ -8,8 +8,13 @@ function getMcpUrl(): URL {
   const embedId = process.env.ZAPIER_MCP_EMBED_ID;
   const secret  = process.env.ZAPIER_MCP_SECRET;
   if (!embedId || !secret) throw new Error('ZAPIER_MCP_EMBED_ID o ZAPIER_MCP_SECRET no configurados');
-  const serverId = Buffer.from(`${embedId}:${secret}`).toString('base64');
-  console.log(`[mcp] serverId (base64): ${serverId.slice(0, 20)}...`);
+  // URL-safe base64: reemplaza +→- /→_ y quita padding =
+  const serverId = Buffer.from(`${embedId}:${secret}`)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+  console.log(`[mcp] serverId (base64url): ${serverId.slice(0, 20)}...`);
   return new URL(`https://mcp.zapier.com/api/mcp/s/${serverId}/mcp`);
 }
 
