@@ -11,7 +11,6 @@ import {
 import { callCatalina } from '@/lib/openrouter';
 import { sendTextMessage } from '@/lib/chatarchitect/client';
 import { syncToKommo } from '@/lib/kommo/client';
-import { triggerZapierAction, sendMediaFromOutput } from '@/lib/zapier/client';
 import { callZapierTool, zapierMcpConfigured } from '@/lib/zapier/mcp-client';
 
 export const dynamic = 'force-dynamic';
@@ -134,19 +133,11 @@ async function processMessage(params: {
   const { message_id } = await sendTextMessage(phone, catalinaOutput.message_to_send);
   console.log(`[kommo-wh] → enviado a ${phone} (ca_id: ${message_id})`);
 
-  void sendMediaFromOutput(phone, catalinaOutput).catch((err) =>
-    console.error('[mcp] error enviando media:', err)
-  );
-
+  // Claude ya ejecutó las herramientas Zapier (sheets, audio, video) durante su respuesta.
+  // Solo necesitamos sincronizar el estado con Kommo.
   void syncToKommo(convo.id, phone, name, catalinaOutput).catch((err) =>
     console.error('[kommo] error sync:', err)
   );
-
-  if (catalinaOutput.zapier_action !== 'none') {
-    void triggerZapierAction(convo.id, catalinaOutput).catch((err) =>
-      console.error('[zapier] error:', err)
-    );
-  }
 }
 
 // ── Extracción de contenido de adjuntos via Zapier MCP ────────────────────
