@@ -9,7 +9,13 @@ import {
   updateConversationCatalinaData,
 } from '@/lib/db';
 import { callCatalina } from '@/lib/openrouter';
-import { sendTextMessage } from '@/lib/chatarchitect/client';
+import {
+  sendTextMessage,
+  sendAudioMessage,
+  sendVideoMessage,
+  sendImageMessage,
+  sendDocumentMessage,
+} from '@/lib/chatarchitect/client';
 import { syncToKommo } from '@/lib/kommo/client';
 import { callZapierTool, zapierMcpConfigured } from '@/lib/zapier/mcp-client';
 
@@ -133,11 +139,38 @@ async function processMessage(params: {
   const { message_id } = await sendTextMessage(phone, catalinaOutput.message_to_send);
   console.log(`[kommo-wh] → enviado a ${phone} (ca_id: ${message_id})`);
 
-  // Claude ya ejecutó las herramientas Zapier (sheets, audio, video) durante su respuesta.
-  // Solo necesitamos sincronizar el estado con Kommo.
+  // Enviar medios si Claude los indicó en el JSON
+  void sendMediaIfNeeded(phone, catalinaOutput).catch((err) =>
+    console.error('[chatarchitect] error enviando media:', err)
+  );
+
   void syncToKommo(convo.id, phone, name, catalinaOutput).catch((err) =>
     console.error('[kommo] error sync:', err)
   );
+}
+
+// ── Envío de media via ChatArchitect ─────────────────────────────────────
+
+async function sendMediaIfNeeded(
+  phone: string,
+  output: import('@/lib/openrouter').CatalinaOutput
+): Promise<void> {
+  const tasks: Promise<void>[] = [];
+
+  if (output.audio_url && output.audio_url !== 'generate') {
+    tasks.push(sendAudioMessage(phone, output.audio_url));
+  }
+  if (output.video_url) {
+    tasks.push(sendVideoMessage(phone, output.video_url));
+  }
+  if ((output as unknown as Record<string, string>).image_url) {
+    tasks.push(sendImageMessage(phone, (output as unknown as Record<string, string>).image_url));
+  }
+  if (output.pdf_url) {
+    tasks.push(sendDocumentMessage(phone, output.pdf_url, output.pdf_filename ?? undefined));
+  }
+
+  if (tasks.length > 0) await Promise.allSettled(tasks);
 }
 
 // ── Extracción de contenido de adjuntos via Zapier MCP ────────────────────

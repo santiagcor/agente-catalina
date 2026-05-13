@@ -46,6 +46,77 @@ export async function sendTextMessage(
   return { message_id: json?.id ?? json?.message_id ?? 'unknown' };
 }
 
+export async function sendAudioMessage(
+  phone: string,
+  audioUrl: string
+): Promise<void> {
+  if (!hasCredentials()) return;
+  const res = await fetch(`${CA_BASE}/whatsappmessage`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      channel: 'whatsapp',
+      destination: phone,
+      payload: { type: 'audio', url: audioUrl },
+    }),
+  });
+  if (!res.ok) console.error(`[chatarchitect] audio error ${res.status}: ${await res.text()}`);
+}
+
+export async function sendVideoMessage(
+  phone: string,
+  videoUrl: string,
+  caption?: string
+): Promise<void> {
+  if (!hasCredentials()) return;
+  const res = await fetch(`${CA_BASE}/whatsappmessage`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      channel: 'whatsapp',
+      destination: phone,
+      payload: { type: 'video', url: videoUrl, ...(caption ? { caption } : {}) },
+    }),
+  });
+  if (!res.ok) console.error(`[chatarchitect] video error ${res.status}: ${await res.text()}`);
+}
+
+export async function sendImageMessage(
+  phone: string,
+  imageUrl: string,
+  caption?: string
+): Promise<void> {
+  if (!hasCredentials()) return;
+  const res = await fetch(`${CA_BASE}/whatsappmessage`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      channel: 'whatsapp',
+      destination: phone,
+      payload: { type: 'image', url: imageUrl, ...(caption ? { caption } : {}) },
+    }),
+  });
+  if (!res.ok) console.error(`[chatarchitect] imagen error ${res.status}: ${await res.text()}`);
+}
+
+export async function sendDocumentMessage(
+  phone: string,
+  documentUrl: string,
+  filename?: string
+): Promise<void> {
+  if (!hasCredentials()) return;
+  const res = await fetch(`${CA_BASE}/whatsappmessage`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      channel: 'whatsapp',
+      destination: phone,
+      payload: { type: 'document', url: documentUrl, ...(filename ? { filename } : {}) },
+    }),
+  });
+  if (!res.ok) console.error(`[chatarchitect] documento error ${res.status}: ${await res.text()}`);
+}
+
 /** Verifica credenciales usando el endpoint de templates */
 export async function getAccountInfo(): Promise<{ phone: string; name: string }> {
   if (!hasCredentials()) {

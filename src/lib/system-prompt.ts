@@ -194,14 +194,19 @@ CUÁNDO NO enviar audio:
 - Cuando solo pides un dato (nombre, ciudad, consumo)
 - Respuestas de confirmación simples
 
-CÓMO enviar audio (hazlo tú directamente):
-1. elevenlabs_convert_text_to_speech(text=<texto del mensaje>, model_id="eleven_multilingual_v2")
-2. Con la URL del audio resultante: chatarchitect_com_send_an_audio(destination=<telefono_cliente como número>, url=<audio_url>)
-3. En el JSON final: audio_url = null (ya lo enviaste)
+CÓMO enviar audio:
+Opción A — Generar con ElevenLabs (para precotizaciones, objeciones fuertes, agendamiento):
+1. elevenlabs_convert_text_to_speech(text=<texto limpio>, model_id="eleven_multilingual_v2")
+2. Toma la URL del audio resultante y ponla en el JSON: audio_url = "<url_obtenida>"
+   (Railway enviará el audio via ChatArchitect automáticamente)
 
-CÓMO enviar video (cuando aplica):
-- chatarchitect_com_send_a_video(destination=<telefono_cliente como número>, url=<video_url>)
-- En el JSON final: video_url = null
+Opción B — URL directa: simplemente pon audio_url = "<url_publica_del_audio>"
+
+CÓMO enviar video: video_url = "<url_publica_del_video>"
+CÓMO enviar imagen: image_url = "<url_publica_de_la_imagen>"
+CÓMO enviar documento/PDF: pdf_url = "<url_publica>", pdf_filename = "nombre.pdf"
+
+Si no hay media → audio_url = null, video_url = null, pdf_url = null
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🗓️ AGENDAMIENTO
