@@ -143,8 +143,12 @@ export async function syncToKommo(
       temperature: catalinaOutput.lead_temperature,
     });
     updateConversationCatalinaData(conversationId, { kommo_lead_id: leadId });
-  } else if (catalinaOutput.new_status_id !== convo.kommo_status_id) {
-    await updateLeadStatus(leadId, catalinaOutput.new_status_id, pipelineId);
+  } else {
+    // Siempre actualizar el estado en Kommo — la comparación con DB no es fiable
+    // porque updateConversationCatalinaData ya actualizó kommo_status_id antes de esta llamada
+    if (catalinaOutput.new_status_id) {
+      await updateLeadStatus(leadId, catalinaOutput.new_status_id, pipelineId);
+    }
   }
 
 }

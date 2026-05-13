@@ -4,18 +4,18 @@
 
 function getBaseUrl(): string {
   const embedId = process.env.ZAPIER_MCP_EMBED_ID;
-  if (!embedId) throw new Error('ZAPIER_MCP_EMBED_ID no configurado');
-  return `https://mcp.zapier.com/api/mcp/s/${embedId}/mcp`;
+  const secret  = process.env.ZAPIER_MCP_SECRET;
+  if (!embedId || !secret) throw new Error('ZAPIER_MCP_EMBED_ID o ZAPIER_MCP_SECRET no configurados');
+  // Zapier embed MCP: server ID = base64url(embedId:secret)
+  const serverId = Buffer.from(`${embedId}:${secret}`)
+    .toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  console.log(`[mcp] serverId prefix: ${serverId.slice(0, 20)}...`);
+  return `https://mcp.zapier.com/api/mcp/s/${serverId}/mcp`;
 }
 
 function headers(): Record<string, string> {
-  const secret = process.env.ZAPIER_MCP_SECRET;
-  if (!secret) throw new Error('ZAPIER_MCP_SECRET no configurado');
-  return {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json, text/event-stream',
-    'Authorization': `Bearer ${secret}`,
-  };
+  return { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' };
 }
 
 async function initialize(): Promise<string> {
