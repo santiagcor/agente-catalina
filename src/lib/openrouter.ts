@@ -65,6 +65,7 @@ export async function callCatalina(
       { role: 'system', content: `${SYSTEM_PROMPT}\n\n${contextBlock}${ragContext ? `\n\n---\n\n## DOCUMENTOS DE CONOCIMIENTO ENERGREEN\n\n${ragContext}` : ''}` },
       ...history,
     ],
+    response_format: { type: 'json_object' },
     max_tokens: 1200,
     temperature: 0.3,
   });

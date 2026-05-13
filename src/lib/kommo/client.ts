@@ -147,9 +147,4 @@ export async function syncToKommo(
     await updateLeadStatus(leadId, catalinaOutput.new_status_id, pipelineId);
   }
 
-  // Añadir respuesta de Catalina como nota en el lead para que sea visible en Kommo
-  if (leadId && catalinaOutput.message_to_send) {
-    await addNoteToLead(leadId, `🤖 Catalina: ${catalinaOutput.message_to_send}`);
-  }
-
 }

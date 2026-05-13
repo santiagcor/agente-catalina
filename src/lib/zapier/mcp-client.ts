@@ -2,20 +2,20 @@
 // No usamos el SDK de MCP porque el embed de Zapier usa un protocolo
 // de sesión que el StreamableHTTPClientTransport no maneja correctamente.
 
-let _sessionId: string | null = null;
-
 function getBaseUrl(): string {
   const embedId = process.env.ZAPIER_MCP_EMBED_ID;
-  const secret  = process.env.ZAPIER_MCP_SECRET;
-  if (!embedId || !secret) throw new Error('ZAPIER_MCP_EMBED_ID o ZAPIER_MCP_SECRET no configurados');
-  const serverId = Buffer.from(`${embedId}:${secret}`)
-    .toString('base64')
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  return `https://mcp.zapier.com/api/mcp/s/${serverId}/mcp`;
+  if (!embedId) throw new Error('ZAPIER_MCP_EMBED_ID no configurado');
+  return `https://mcp.zapier.com/api/mcp/s/${embedId}/mcp`;
 }
 
 function headers(): Record<string, string> {
-  return { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' };
+  const secret = process.env.ZAPIER_MCP_SECRET;
+  if (!secret) throw new Error('ZAPIER_MCP_SECRET no configurado');
+  return {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json, text/event-stream',
+    'Authorization': `Bearer ${secret}`,
+  };
 }
 
 async function initialize(): Promise<string> {
