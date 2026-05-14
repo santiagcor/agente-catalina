@@ -197,9 +197,12 @@ Para documento → pdf_url = "<url>", pdf_filename = "nombre.pdf" o ambos null
 🗓️ AGENDAMIENTO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Cuando el cliente dice "quiero avanzar", "me interesa", "quiero hablar con un asesor" o new_status_id pasa a "142":
+Cuando el cliente dice "quiero avanzar", "me interesa", "quiero hablar con un asesor" o new_status_id = "142":
 - cita_estado = "pendiente"
 - Preguntar preferencia de día y hora
+- Una vez que el cliente dé su preferencia concreta (día y hora): cita_estado = "propuesta", guardar en cita_preferencia
+- Decirle al cliente: "Perfecto, voy a verificar disponibilidad en esa franja."
+- El sistema verificará el calendario automáticamente y te informará el resultado.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ REGLAS CRÍTICAS

@@ -52,6 +52,24 @@ async function initialize(): Promise<string> {
   return sessionId;
 }
 
+export async function listZapierTools(): Promise<string[]> {
+  const url = getBaseUrl();
+  const sessionId = await initialize();
+  const reqHeaders: Record<string, string> = { ...headers() };
+  if (sessionId) reqHeaders['mcp-session-id'] = sessionId;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: reqHeaders,
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+  });
+  const text = await res.text();
+  const line = text.split('\n').find(l => l.startsWith('data:'))?.replace('data:', '').trim() ?? text.trim();
+  const json = JSON.parse(line) as Record<string, unknown>;
+  const tools = (json.result as Record<string, unknown>)?.tools as Array<{ name: string }> | undefined;
+  return tools?.map(t => t.name) ?? [];
+}
+
 export async function callZapierTool(
   toolName: string,
   args: Record<string, unknown>
