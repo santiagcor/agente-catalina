@@ -18,6 +18,7 @@ import {
 } from '@/lib/chatarchitect/client';
 import { syncToKommo } from '@/lib/kommo/client';
 import { callZapierTool, zapierMcpConfigured } from '@/lib/zapier/mcp-client';
+import { callSchedulingAgent, shouldTriggerScheduling } from '@/lib/scheduling';
 
 export const dynamic = 'force-dynamic';
 
@@ -135,6 +136,13 @@ async function processMessage(params: {
     last_catalina_json: JSON.stringify(catalinaOutput),
   });
 
+  // Si el lead debe ir a agendamiento, delegamos al agente especializado
+  if (shouldTriggerScheduling(catalinaOutput.cita_estado ?? '', catalinaOutput.new_status_id)) {
+    void handleScheduling(convo.id, phone, resolvedText, fresh, catalinaOutput).catch((err) =>
+      console.error('[scheduling] error:', err)
+    );
+  }
+
   insertMessage(convo.id, 'assistant', catalinaOutput.message_to_send);
   const { message_id } = await sendTextMessage(phone, catalinaOutput.message_to_send);
   console.log(`[kommo-wh] → enviado a ${phone} (ca_id: ${message_id})`);
@@ -147,6 +155,37 @@ async function processMessage(params: {
   void syncToKommo(convo.id, phone, name, catalinaOutput).catch((err) =>
     console.error('[kommo] error sync:', err)
   );
+}
+
+// ── Agente de agendamiento ────────────────────────────────────────────────
+
+async function handleScheduling(
+  conversationId: number,
+  phone: string,
+  userMessage: string,
+  convo: import('@/lib/db').Conversation,
+  catalinaOutput: import('@/lib/openrouter').CatalinaOutput
+): Promise<void> {
+  const result = await callSchedulingAgent(userMessage, {
+    ...convo,
+    catalina_cita_preferencia: catalinaOutput.cita_preferencia || convo.catalina_cita_preferencia,
+    catalina_cita_estado: catalinaOutput.cita_estado || convo.catalina_cita_estado,
+    lead_temperature: catalinaOutput.lead_temperature || convo.lead_temperature,
+  });
+
+  if (!result) return;
+
+  console.log(`[scheduling] → ${result.cita_estado}, meet: ${result.meet_link}`);
+
+  // Guardar en DB y enviar al cliente
+  const { insertMessage: ins, updateConversationCatalinaData: upd } = await import('@/lib/db');
+  ins(conversationId, 'assistant', result.message_to_send);
+  await sendTextMessage(phone, result.message_to_send);
+
+  upd(conversationId, {
+    catalina_cita_estado: result.cita_estado,
+    catalina_cita_preferencia: result.cita_preferencia,
+  });
 }
 
 // ── Envío de media via ChatArchitect ─────────────────────────────────────
