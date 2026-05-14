@@ -18,6 +18,7 @@ import {
 } from '@/lib/chatarchitect/client';
 import { syncToKommo } from '@/lib/kommo/client';
 import { callZapierTool, zapierMcpConfigured } from '@/lib/zapier/mcp-client';
+import { triggerZapierAction, sendMediaFromOutput } from '@/lib/zapier/client';
 import { callSchedulingAgent, shouldTriggerScheduling } from '@/lib/scheduling';
 
 export const dynamic = 'force-dynamic';
@@ -147,10 +148,24 @@ async function processMessage(params: {
   const { message_id } = await sendTextMessage(phone, catalinaOutput.message_to_send);
   console.log(`[kommo-wh] → enviado a ${phone} (ca_id: ${message_id})`);
 
-  // Enviar medios si Claude los indicó en el JSON
+  // Enviar medios si el LLM indicó URLs en el JSON
   void sendMediaIfNeeded(phone, catalinaOutput).catch((err) =>
     console.error('[chatarchitect] error enviando media:', err)
   );
+
+  // Escribir/leer Sheets para precotización
+  if (catalinaOutput.zapier_action === 'write_sheets' || catalinaOutput.zapier_action === 'read_sheets') {
+    void triggerZapierAction(convo.id, catalinaOutput).catch((err) =>
+      console.error('[zapier] error sheets:', err)
+    );
+  }
+
+  // Enviar audio ElevenLabs si audio_url = "generate"
+  if (catalinaOutput.audio_url === 'generate') {
+    void sendMediaFromOutput(phone, catalinaOutput).catch((err) =>
+      console.error('[zapier] error audio:', err)
+    );
+  }
 
   void syncToKommo(convo.id, phone, name, catalinaOutput).catch((err) =>
     console.error('[kommo] error sync:', err)
