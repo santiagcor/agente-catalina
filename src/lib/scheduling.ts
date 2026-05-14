@@ -125,7 +125,9 @@ export async function callSchedulingAgent(
       add_google_meet: true,
     }) as Record<string, unknown>;
 
-    const meetLink = (created?.hangoutLink || created?.meet_link || created?.conferenceData?.entryPoints?.[0]?.uri || null) as string | null;
+    const conferenceData = created?.conferenceData as Record<string, unknown> | undefined;
+    const entryPoints = conferenceData?.entryPoints as Array<Record<string, unknown>> | undefined;
+    const meetLink = (created?.hangoutLink || created?.meet_link || entryPoints?.[0]?.uri || null) as string | null;
     console.log(`[scheduling] evento creado, meet: ${meetLink}`);
 
     return {
