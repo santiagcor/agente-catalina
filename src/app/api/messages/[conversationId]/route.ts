@@ -5,7 +5,13 @@ import {
   insertMessage,
   updateMessageCaId,
 } from '@/lib/db';
-import { sendTextMessage } from '@/lib/chatarchitect/client';
+import {
+  sendTextMessage,
+  sendAudioMessage,
+  sendVideoMessage,
+  sendImageMessage,
+  sendDocumentMessage,
+} from '@/lib/chatarchitect/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,9 +40,35 @@ export async function POST(
     return NextResponse.json({ error: 'la conversación no está en modo HUMAN' }, { status: 400 });
   }
 
-  const { content } = (await req.json()) as { content: string };
-  if (!content?.trim()) {
-    return NextResponse.json({ error: 'content requerido' }, { status: 400 });
+  const body = (await req.json()) as {
+    content?: string;
+    mediaType?: 'audio' | 'video' | 'image' | 'document';
+    mediaUrl?: string;
+    filename?: string;
+  };
+
+  // Envío de media
+  if (body.mediaType && body.mediaUrl) {
+    const label = `[${body.mediaType.toUpperCase()}] ${body.mediaUrl}`;
+    const messageId = insertMessage(id, 'human', label);
+    try {
+      switch (body.mediaType) {
+        case 'audio':    await sendAudioMessage(convo.phone, body.mediaUrl); break;
+        case 'video':    await sendVideoMessage(convo.phone, body.mediaUrl); break;
+        case 'image':    await sendImageMessage(convo.phone, body.mediaUrl); break;
+        case 'document': await sendDocumentMessage(convo.phone, body.mediaUrl, body.filename); break;
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return NextResponse.json({ error: `Error enviando media: ${message}` }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, messageId });
+  }
+
+  // Envío de texto
+  const content = body.content ?? '';
+  if (!content.trim()) {
+    return NextResponse.json({ error: 'content o mediaUrl requerido' }, { status: 400 });
   }
 
   const messageId = insertMessage(id, 'human', content);
