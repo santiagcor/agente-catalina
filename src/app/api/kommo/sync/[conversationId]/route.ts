@@ -41,6 +41,7 @@ export async function POST(
     pdf_url: null,
     audio_url: null,
     video_url: null,
+    image_url: null,
     pdf_filename: null,
     cita_preferencia: catalinaData.cita_preferencia ?? convo.catalina_cita_preferencia ?? '',
     cita_estado: (catalinaData.cita_estado ?? convo.catalina_cita_estado ?? '') as CatalinaOutput['cita_estado'],

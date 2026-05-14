@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import type { Conversation } from './db';
 
 export interface CatalinaOutput {
@@ -15,27 +15,20 @@ export interface CatalinaOutput {
   pdf_url: string | null;
   audio_url: string | null;
   video_url: string | null;
+  image_url: string | null;
   pdf_filename: string | null;
   cita_preferencia: string;
   cita_estado: 'pendiente' | 'propuesta' | 'confirmada' | '';
 }
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY ?? '',
+const client = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY ?? '',
+  baseURL: 'https://openrouter.ai/api/v1',
+  defaultHeaders: {
+    'HTTP-Referer': 'https://energreensolutions.co',
+    'X-Title': 'Agente Catalina',
+  },
 });
-
-function getZapierMcpServer() {
-  const embedId = process.env.ZAPIER_MCP_EMBED_ID;
-  const secret  = process.env.ZAPIER_MCP_SECRET;
-  if (!embedId || !secret) return null;
-  // El secret va como Authorization: Bearer — el embedId en el URL
-  return {
-    type: 'url' as const,
-    url: `https://mcp.zapier.com/api/mcp/s/${embedId}/mcp`,
-    name: 'zapier',
-    authorization_token: secret,
-  };
-}
 
 export async function callCatalina(
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
@@ -55,32 +48,27 @@ export async function callCatalina(
     `telefono_cliente: ${convo.phone}`,
   ].join('\n');
 
-  const zapierServer = getZapierMcpServer();
+  const systemPrompt = `${SYSTEM_PROMPT}\n\n${contextBlock}`;
 
-  const params = {
-    model: process.env.CLAUDE_MODEL ?? 'claude-haiku-4-5-20251001',
-    max_tokens: 4096,
-    system: `${SYSTEM_PROMPT}\n\n${contextBlock}`,
-    messages: history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
-    betas: ['mcp-client-2025-04-04'] as string[],
-    ...(zapierServer ? { mcp_servers: [zapierServer] } : {}),
-  };
+  const completion = await client.chat.completions.create({
+    model: process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini',
+    response_format: { type: 'json_object' },
+    max_tokens: 1200,
+    temperature: 0.3,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+    ],
+  });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const response = await (client.beta.messages as any).create(params);
-
-  const texts: string[] = (response.content ?? [])
-    .filter((b: { type: string }) => b.type === 'text')
-    .map((b: { text: string }) => b.text);
-
-  const raw = texts[texts.length - 1] ?? '{}';
-  console.log('[claude] respuesta final (primeros 200):', raw.slice(0, 200));
+  const raw = completion.choices[0]?.message?.content ?? '{}';
+  console.log('[openrouter] respuesta (primeros 200):', raw.slice(0, 200));
 
   try {
     const cleaned = raw.replace(/```json|```/g, '').trim();
     return JSON.parse(cleaned) as CatalinaOutput;
   } catch {
-    console.error('[claude] respuesta no-JSON:', raw.slice(0, 300));
+    console.error('[openrouter] respuesta no-JSON de Catalina:', raw.slice(0, 300));
     return buildFallback(raw, convo);
   }
 }
@@ -100,6 +88,7 @@ function buildFallback(raw: string, convo: Conversation): CatalinaOutput {
     pdf_url: null,
     audio_url: null,
     video_url: null,
+    image_url: null,
     pdf_filename: null,
     cita_preferencia: convo.catalina_cita_preferencia ?? '',
     cita_estado: (convo.catalina_cita_estado as CatalinaOutput['cita_estado']) ?? '',
