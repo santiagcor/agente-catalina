@@ -144,21 +144,26 @@ async function processMessage(params: {
     );
   }
 
-  insertMessage(convo.id, 'assistant', catalinaOutput.message_to_send);
-  const { message_id } = await sendTextMessage(phone, catalinaOutput.message_to_send);
-  console.log(`[kommo-wh] → enviado a ${phone} (ca_id: ${message_id})`);
+  const needsSheets = catalinaOutput.zapier_action === 'write_sheets' || catalinaOutput.zapier_action === 'read_sheets';
+
+  if (needsSheets) {
+    // Para cotización: enviar mensaje de espera, luego bloquear hasta tener resultado de Sheets
+    insertMessage(convo.id, 'assistant', catalinaOutput.message_to_send);
+    await sendTextMessage(phone, catalinaOutput.message_to_send);
+    console.log(`[kommo-wh] → enviado a ${phone} (mensaje previo cotización)`);
+    await triggerZapierAction(convo.id, catalinaOutput).catch((err) =>
+      console.error('[zapier] error sheets:', err)
+    );
+  } else {
+    insertMessage(convo.id, 'assistant', catalinaOutput.message_to_send);
+    const { message_id } = await sendTextMessage(phone, catalinaOutput.message_to_send);
+    console.log(`[kommo-wh] → enviado a ${phone} (ca_id: ${message_id})`);
+  }
 
   // Enviar medios si el LLM indicó URLs en el JSON
   void sendMediaIfNeeded(phone, catalinaOutput).catch((err) =>
     console.error('[chatarchitect] error enviando media:', err)
   );
-
-  // Escribir/leer Sheets para precotización
-  if (catalinaOutput.zapier_action === 'write_sheets' || catalinaOutput.zapier_action === 'read_sheets') {
-    void triggerZapierAction(convo.id, catalinaOutput).catch((err) =>
-      console.error('[zapier] error sheets:', err)
-    );
-  }
 
   // Enviar audio ElevenLabs si audio_url = "generate"
   if (catalinaOutput.audio_url === 'generate') {
