@@ -20,6 +20,7 @@ import { syncToKommo } from '@/lib/kommo/client';
 import { callZapierTool, zapierMcpConfigured } from '@/lib/zapier/mcp-client';
 import { triggerZapierAction, sendMediaFromOutput } from '@/lib/zapier/client';
 import { callSchedulingAgent, shouldTriggerScheduling } from '@/lib/scheduling';
+import { bufferMessage } from '@/lib/message-buffer';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,14 +59,31 @@ export async function POST(req: NextRequest) {
   }
   markMessageProcessed(dedupKey);
 
-  void processMessage({
-    contactId: _contactId,
-    leadId: _leadId,
-    talkId: _talkId,
-    text,
-    attachmentUrl,
-    attachmentType,
-  }).catch((err) => console.error('[kommo-wh] error en procesamiento:', err));
+  // Obtener teléfono para el buffer (necesitamos el contactId como clave provisional)
+  const bufferKey = String(_contactId);
+  const isFirst = bufferMessage(
+    bufferKey,
+    { text, attachmentUrl, attachmentType },
+    (messages) => {
+      // Unir todos los textos acumulados en uno solo
+      const combined = messages.map(m => m.text).filter(Boolean).join('\n');
+      const lastAttachment = messages.findLast(m => m.attachmentUrl);
+      void processMessage({
+        contactId: _contactId,
+        leadId: _leadId,
+        talkId: _talkId,
+        text: combined || text,
+        attachmentUrl: lastAttachment?.attachmentUrl ?? attachmentUrl,
+        attachmentType: lastAttachment?.attachmentType ?? attachmentType,
+      }).catch((err) => console.error('[kommo-wh] error en procesamiento:', err));
+    }
+  );
+
+  if (isFirst) {
+    console.log(`[kommo-wh] buffer iniciado para ${bufferKey}, esperando más mensajes...`);
+  } else {
+    console.log(`[kommo-wh] mensaje acumulado en buffer de ${bufferKey}`);
+  }
 
   return NextResponse.json({ ok: true });
 }
