@@ -42,11 +42,7 @@ export async function callSchedulingAgent(
     `lead_temperature: ${convo.lead_temperature || 'frio'}`,
   ].join('\n');
 
-  // Construir la URL MCP con base64url(embedId:secret)
-  const serverId = Buffer.from(`${embedId}:${secret}`)
-    .toString('base64')
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  const mcpUrl = `https://mcp.zapier.com/api/mcp/s/${serverId}/mcp`;
+  const mcpUrl = `https://mcp.zapier.com/api/mcp/s/${embedId}/mcp`;
 
   console.log('[scheduling] llamando agente de agendamiento via OpenRouter + MCP');
 
