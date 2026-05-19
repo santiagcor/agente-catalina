@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface ConnectionInfo {
   status: string;
@@ -8,11 +9,7 @@ interface ConnectionInfo {
   kommo?: { name: string; subdomain: string };
 }
 
-interface Props {
-  connectionInfo: ConnectionInfo;
-}
-
-export default function DashboardHeader({ connectionInfo }: Props) {
+export default function DashboardHeader({ connectionInfo }: { connectionInfo: ConnectionInfo }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string>('');
 
@@ -32,34 +29,60 @@ export default function DashboardHeader({ connectionInfo }: Props) {
 
   const waPhone = connectionInfo.chatarchitect?.phone ?? 'WhatsApp';
   const kommoName = connectionInfo.kommo?.name ?? '';
+  const isOk = testResult.startsWith('✓');
 
   return (
-    <header className="flex items-center justify-between px-6 py-3 bg-slate-800 border-b border-slate-700 shrink-0">
+    <header className="flex items-center justify-between px-6 py-3 bg-slate-900 border-b border-slate-700/60 shrink-0">
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 bg-emerald-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-          C
+        {/* Logo */}
+        <div className="relative">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-lg shadow-emerald-900/40">
+            <span className="text-white font-bold text-sm">EG</span>
+          </div>
+          <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-slate-900" />
         </div>
         <div>
-          <h1 className="font-semibold text-slate-100 text-sm">Agente Catalina — ENERGREEN</h1>
-          <p className="text-xs text-slate-400">
-            {waPhone}{kommoName ? ` · Kommo: ${kommoName}` : ''}
+          <h1 className="font-semibold text-slate-100 text-sm tracking-tight">
+            Agente Catalina
+            <span className="text-emerald-400 ml-1">— ENERGREEN</span>
+          </h1>
+          <p className="text-xs text-slate-500">
+            {waPhone}{kommoName ? ` · ${kommoName}` : ''}
           </p>
         </div>
       </div>
 
       <div className="flex items-center gap-3">
-        {testResult && (
-          <span className={`text-xs ${testResult.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>
-            {testResult}
-          </span>
-        )}
-        <button
+        <AnimatePresence mode="wait">
+          {testResult && (
+            <motion.span
+              key={testResult}
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0 }}
+              className={`text-xs font-medium ${isOk ? 'text-emerald-400' : 'text-red-400'}`}
+            >
+              {testResult}
+            </motion.span>
+          )}
+        </AnimatePresence>
+        <motion.button
+          whileTap={{ scale: 0.95 }}
           onClick={handleTest}
           disabled={testing}
-          className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-slate-200 rounded"
+          className="px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 rounded-lg border border-slate-700 transition-colors"
         >
-          {testing ? 'Probando…' : 'Probar conexión'}
-        </button>
+          {testing ? (
+            <span className="flex items-center gap-1.5">
+              <motion.span
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                className="inline-block"
+              >⟳</motion.span>
+              Probando
+            </span>
+          ) : 'Probar conexión'}
+        </motion.button>
       </div>
     </header>
   );
